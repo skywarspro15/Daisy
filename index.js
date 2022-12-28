@@ -1,4 +1,5 @@
 require("dotenv").config({ path: __dirname + "/.env" });
+const fs = require("fs");
 const {
   REST,
   Routes,
@@ -30,12 +31,40 @@ const commands = [
     name: "cow",
     description: "Morph Daisy back to her former self.",
   },
+  {
+    name: "forget",
+    description: "Daisy will forget a conversation with you and start fresh.",
+  },
 ];
 
+var dataset = {};
 var messageCount = 0;
 var cow = false;
+var connection;
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+
+if (fs.existsSync("dataset.json")) {
+  let rawJSON = fs.readFileSync("dataset.json", "utf8");
+  dataset = JSON.parse(rawJSON);
+} else {
+  fs.writeFileSync("dataset.json", JSON.stringify(dataset));
+}
+
+async function query(data) {
+  const response = await fetch(
+    "https://api-inference.huggingface.co/models/satvikag/chatbot",
+    {
+      headers: {
+        Authorization: "Bearer " + process.env.BEARER,
+      },
+      method: "POST",
+      body: JSON.stringify(data),
+    }
+  );
+  const result = await response.json();
+  return result;
+}
 
 async function isToxic(comment) {
   console.log("Checking if message is toxic: " + comment);
@@ -63,25 +92,30 @@ client.on("ready", () => {
 });
 
 client.on("messageCreate", async (message) => {
+  let isCommand = false;
   if (message.author.bot) return;
   messageCount = messageCount + 1;
   timeOut = 2000;
-  const voiceChannel = message.member.voice.channel;
+
   if (
     String(message.content).toLowerCase().includes("daisy") &&
     String(message.content).toLowerCase().includes("vc")
   ) {
+    isCommand = true;
+    const voiceChannel = message.member.voice.channel;
     if (!voiceChannel) {
       message.reply("Join a voice channel first!");
+      return;
     }
     message.reply("Sure! Joining...");
-    joinVoiceChannel({
+    connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId: voiceChannel.guild.id,
       adapterCreator: voiceChannel.guild.voiceAdapterCreator,
       selfDeaf: false,
     });
   }
+
   setTimeout(async function () {
     const messageToxic = await isToxic(message.content);
     var embed;
@@ -149,6 +183,49 @@ client.on("messageCreate", async (message) => {
         embeds: [embed],
       });
       message.delete();
+    } else {
+      if (isCommand) return;
+      if (!String(message.content).toLowerCase().includes("daisy")) {
+        if (message.reference) {
+          const repliedTo = await message.channel.messages.fetch(
+            message.reference.messageId
+          );
+
+          console.log(repliedTo.content);
+          if (!repliedTo.author.bot) return;
+        } else {
+          return;
+        }
+      }
+
+      message.channel.sendTyping();
+
+      let inputs = [];
+      let responses = [];
+      if (message.author.id in dataset) {
+        let userStored = dataset[message.author.id];
+        inputs = userStored["inputs"];
+        responses = userStored["responses"];
+      }
+      let result = await query({
+        "inputs": {
+          "past_user_inputs": inputs,
+          "generated_responses": responses,
+          "text": message.content,
+        },
+      });
+      if ("generated_text" in result) {
+        inputs.push(message.content);
+        responses.push(result["generated_text"]);
+        console.log(inputs);
+        console.log(responses);
+        dataset[message.author.id] = {
+          "inputs": inputs,
+          "responses": responses,
+        };
+        fs.writeFileSync("dataset.json", JSON.stringify(dataset));
+        message.reply(result["generated_text"]);
+      }
     }
     messageCount = messageCount - 1;
   }, timeOut);
@@ -207,6 +284,12 @@ client.on("interactionCreate", async (interaction) => {
     }
     await interaction.reply({ embeds: [embed] });
   }
+
+  if (interaction.commandName == "forget") {
+    delete dataset[interaction.member.user.id];
+    fs.writeFileSync("dataset.json", JSON.stringify(dataset));
+    await interaction.reply("Successfully deleted our conversation.");
+  }
 });
 
 client.on("speech", (msg) => {
@@ -218,6 +301,10 @@ client.on("speech", (msg) => {
   }
   if (String(msg.content).includes("i'm doing good")) {
     noMic.send("It's great that you're doing good!");
+  }
+  if (String(msg.content).includes("you may now leave")) {
+    noMic.send("Bye!!");
+    connection.destroy();
   }
 });
 

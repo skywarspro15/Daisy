@@ -1,5 +1,7 @@
 require("dotenv").config({ path: __dirname + "/.env" });
 const fs = require("fs");
+const discordTTS = require("discord-tts");
+const Tesseract = require("tesseract.js");
 const {
   REST,
   Routes,
@@ -7,7 +9,15 @@ const {
   GatewayIntentBits,
   EmbedBuilder,
 } = require("discord.js");
-const { joinVoiceChannel } = require("@discordjs/voice");
+const {
+  joinVoiceChannel,
+  AudioPlayer,
+  createAudioResource,
+  StreamType,
+  entersState,
+  VoiceConnectionStatus,
+  VoiceConnection,
+} = require("@discordjs/voice");
 const { addSpeechEvent } = require("discord-speech-recognition");
 const client = new Client({
   intents: [
@@ -35,12 +45,23 @@ const commands = [
     name: "forget",
     description: "Daisy will forget a conversation with you and start fresh.",
   },
+  {
+    name: "join-voice",
+    description: "Start a voice conversation with Daisy.",
+  },
+  {
+    name: "leave-voice",
+    description: "End a voice conversation.",
+  },
 ];
 
 var dataset = {};
 var messageCount = 0;
 var cow = false;
 var connection;
+var lastResponse = "";
+
+var audioPlayer = new AudioPlayer();
 
 const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
@@ -48,12 +69,12 @@ if (fs.existsSync("dataset.json")) {
   let rawJSON = fs.readFileSync("dataset.json", "utf8");
   dataset = JSON.parse(rawJSON);
 } else {
-  fs.writeFileSync("dataset.json", JSON.stringify(dataset));
+  fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
 }
 
 async function query(data) {
   const response = await fetch(
-    "https://api-inference.huggingface.co/models/satvikag/chatbot",
+    "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
     {
       headers: {
         Authorization: "Bearer " + process.env.BEARER,
@@ -67,9 +88,13 @@ async function query(data) {
 }
 
 async function isToxic(comment) {
+  if (comment.trim() == "") {
+    return "False";
+  }
   console.log("Checking if message is toxic: " + comment);
   return await fetch(
-    "https://NodeToxicityChecker.skywarspro15.repl.co/toxic?comment=" + comment
+    "https://NodeToxicityChecker.skywarspro15.repl.co/toxic?comment=" +
+      encodeURI(comment.trim())
   ).then((result) => result.text());
 }
 
@@ -97,37 +122,114 @@ client.on("messageCreate", async (message) => {
   messageCount = messageCount + 1;
   timeOut = 2000;
 
-  if (
-    String(message.content).toLowerCase().includes("daisy") &&
-    String(message.content).toLowerCase().includes("vc")
-  ) {
-    isCommand = true;
-    const voiceChannel = message.member.voice.channel;
-    if (!voiceChannel) {
-      message.reply("Join a voice channel first!");
-      return;
-    }
-    message.reply("Sure! Joining...");
-    connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: voiceChannel.guild.id,
-      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-      selfDeaf: false,
-    });
-  }
-
   setTimeout(async function () {
-    const messageToxic = await isToxic(message.content);
+    var messageToxic = await isToxic(message.content);
     var embed;
+    console.log(messageToxic);
+    if (messageToxic == "False") {
+      if (message.attachments.size > 0) {
+        message.attachments.forEach(async (attachment) => {
+          var ImageURL = attachment.proxyURL;
+          const worker = await Tesseract.createWorker({
+            logger: (m) => console.log(m),
+          });
+          await worker.loadLanguage("eng");
+          await worker.initialize("eng");
+          let text = await worker.recognize(ImageURL);
+          let textOCR = String(text["data"]["text"]);
+          console.log(textOCR);
+          let isMessageToxic = await isToxic(textOCR);
+          console.log(isMessageToxic);
+          if (isMessageToxic == "True") {
+            if (
+              String(textOCR).includes("commit suicide") ||
+              String(textOCR).includes("kill myself")
+            ) {
+              embed = new EmbedBuilder()
+                .setColor("#f5e353")
+                .setTitle("Hey, " + message.author.username + "! You alright?")
+                .setAuthor({
+                  name: "Daisy",
+                })
+                .setDescription(
+                  "What you just said is VERY concerning. Get some help."
+                )
+                .setThumbnail(
+                  "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png"
+                )
+                .addFields({ name: "You said (in image):", value: textOCR })
+                .setTimestamp()
+                .setFooter({
+                  text: "I'm trying my best to keep this server as clean as possible!",
+                  iconURL:
+                    "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
+                });
+            } else {
+              embed = new EmbedBuilder()
+                .setColor("#f5e353")
+                .setTitle("HEY!!! You weren't supposed to say that!")
+                .setAuthor({
+                  name: "Daisy",
+                })
+                .setDescription("Could you NOT say that again?")
+                .setThumbnail(
+                  "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/daisy%20angery.png"
+                )
+                .addFields({ name: "You said (in image):", value: textOCR })
+                .setTimestamp()
+                .setFooter({
+                  text: "I'm trying my best to keep this server as clean as possible!",
+                  iconURL:
+                    "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
+                });
+            }
+
+            if (
+              String(textOCR).toLowerCase().includes("daisy") ||
+              String(textOCR).includes("<@1057150902076723290>")
+            ) {
+              embed = new EmbedBuilder()
+                .setColor("#f5e353")
+                .setTitle("WHAT DID YOU JUST SAY ABOUT ME???")
+                .setAuthor({
+                  name: "Daisy",
+                })
+                .setDescription("I'm just minding my own business!")
+                .setThumbnail(
+                  "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/filtered.png"
+                )
+                .addFields({ name: "You said (in image):", value: textOCR })
+                .setTimestamp()
+                .setFooter({
+                  text: "I'm trying my best to keep this server as clean as possible!",
+                  iconURL:
+                    "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
+                });
+            }
+
+            message.channel.send({
+              content: "<@" + message.author.id + ">",
+              embeds: [embed],
+            });
+            message.delete();
+          }
+        });
+      }
+    }
     if (messageToxic == "True") {
-      if (String(message.content).includes("commit suicide")) {
+      if (
+        String(message.content).includes("commit suicide") ||
+        String(message.content).includes("kill myself")
+      ) {
         embed = new EmbedBuilder()
           .setColor("#f5e353")
           .setTitle("Hey, " + message.author.username + "! You alright?")
           .setAuthor({
             name: "Daisy",
           })
-          .setDescription("What you just said is VERY concerning.")
+          .setDescription(
+            "What you just said is VERY concerning. Get some help."
+          )
           .setThumbnail(
             "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png"
           )
@@ -158,7 +260,10 @@ client.on("messageCreate", async (message) => {
           });
       }
 
-      if (String(message.content).toLowerCase().includes("daisy")) {
+      if (
+        String(message.content).toLowerCase().includes("daisy") ||
+        String(message.content).includes("<@1057150902076723290>")
+      ) {
         embed = new EmbedBuilder()
           .setColor("#f5e353")
           .setTitle("WHAT DID YOU JUST SAY ABOUT ME???")
@@ -185,7 +290,10 @@ client.on("messageCreate", async (message) => {
       message.delete();
     } else {
       if (isCommand) return;
-      if (!String(message.content).toLowerCase().includes("daisy")) {
+      if (
+        !String(message.content).toLowerCase().includes("daisy") &&
+        !String(message.content).includes("<@1057150902076723290>")
+      ) {
         if (message.reference) {
           const repliedTo = await message.channel.messages.fetch(
             message.reference.messageId
@@ -215,15 +323,16 @@ client.on("messageCreate", async (message) => {
         },
       });
       if ("generated_text" in result) {
-        inputs.push(message.content);
-        responses.push(result["generated_text"]);
+        inputs = [message.content];
+        responses = [result["generated_text"]];
         console.log(inputs);
         console.log(responses);
         dataset[message.author.id] = {
           "inputs": inputs,
           "responses": responses,
         };
-        fs.writeFileSync("dataset.json", JSON.stringify(dataset));
+        lastResponse = result["generated_text"];
+        fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
         message.reply(result["generated_text"]);
       }
     }
@@ -287,24 +396,112 @@ client.on("interactionCreate", async (interaction) => {
 
   if (interaction.commandName == "forget") {
     delete dataset[interaction.member.user.id];
-    fs.writeFileSync("dataset.json", JSON.stringify(dataset));
+    fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
     await interaction.reply("Successfully deleted our conversation.");
+  }
+
+  if (interaction.commandName == "join-voice") {
+    const voiceChannel = interaction.member.voice.channel;
+    if (!voiceChannel) {
+      interaction.reply("Join a voice channel first!");
+      return;
+    }
+    connection = joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: voiceChannel.guild.id,
+      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+      selfDeaf: false,
+    });
+    interaction.reply("Joined in your voice channel!");
+  }
+
+  if (interaction.commandName == "leave-voice") {
+    const voiceChannel = interaction.member.voice.channel;
+    if (!voiceChannel) {
+      interaction.reply("You're not in a voice channel!");
+      return;
+    }
+    connection.destroy();
+    interaction.reply("Bye! Left your voice channel.");
   }
 });
 
-client.on("speech", (msg) => {
+client.on("guildCreate", async (guild) => {
+  let embed;
+  embed = new EmbedBuilder()
+    .setColor("#f5e353")
+    .setTitle("Thanks for adding me to your server!")
+    .setAuthor({
+      name: "Daisy",
+    })
+    .setDescription(
+      "Hi! I'm Daisy. I'm a character from a YouTuber named Ethobot. Be sure to check him out!"
+    )
+    .addFields(
+      {
+        name: "What I can do:",
+        value:
+          "I can have a conversation with you! Just mention my name and I'll respond! \n And, I can keep the server clean and keep toxic content from coming in.",
+      },
+      {
+        name: "Start a voice conversation:",
+        value: "/join-voice",
+        inline: true,
+      },
+      {
+        name: "End a voice conversation:",
+        value: "/leave-voice",
+        inline: true,
+      }
+    )
+    .setThumbnail(
+      "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png"
+    )
+    .setFooter({
+      text: "I'm a human but that doesn't mean I can't moo.",
+      iconURL:
+        "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
+    });
+  guild.systemChannel.send({ embeds: [embed] });
+});
+
+client.on("speech", async (msg) => {
   if (!msg.content) return;
   console.log(msg.content);
-  const noMic = client.channels.cache.get("1057256110702207066");
-  if (String(msg.content).includes("how are you")) {
-    noMic.send("I'm doing good, <@" + msg.author.id + ">! How about you?");
+  if (!String(msg.content).toLowerCase().includes("daisy")) {
+    return;
   }
-  if (String(msg.content).includes("i'm doing good")) {
-    noMic.send("It's great that you're doing good!");
+  let inputs = [];
+  let responses = [];
+  if (msg.author.id in dataset) {
+    let userStored = dataset[msg.author.id];
+    inputs = userStored["inputs"];
+    responses = userStored["responses"];
   }
-  if (String(msg.content).includes("you may now leave")) {
-    noMic.send("Bye!!");
-    connection.destroy();
+  let result = await query({
+    "inputs": {
+      "past_user_inputs": inputs,
+      "generated_responses": responses,
+      "text": msg.content,
+    },
+  });
+  if ("generated_text" in result) {
+    inputs.push(msg.content);
+    responses.push(result["generated_text"]);
+    console.log(inputs);
+    console.log(responses);
+    dataset[msg.author.id] = {
+      "inputs": inputs,
+      "responses": responses,
+    };
+    fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
+    const stream = discordTTS.getVoiceStream(result["generated_text"]);
+    const audioResource = createAudioResource(stream, {
+      inputType: StreamType.Arbitrary,
+      inlineVolume: true,
+    });
+    connection.subscribe(audioPlayer);
+    audioPlayer.play(audioResource);
   }
 });
 

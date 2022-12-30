@@ -1,5 +1,6 @@
 require("dotenv").config({ path: __dirname + "/.env" });
 const fs = require("fs");
+const cleverbot = require("cleverbot-free");
 const discordTTS = require("discord-tts");
 const Tesseract = require("tesseract.js");
 const {
@@ -308,33 +309,19 @@ client.on("messageCreate", async (message) => {
 
       message.channel.sendTyping();
 
-      let inputs = [];
-      let responses = [];
+      let context = [];
+
       if (message.author.id in dataset) {
         let userStored = dataset[message.author.id];
-        inputs = userStored["inputs"];
-        responses = userStored["responses"];
+        context = userStored["context"];
       }
-      let result = await query({
-        "inputs": {
-          "past_user_inputs": inputs,
-          "generated_responses": responses,
-          "text": message.content,
-        },
-      });
-      if ("generated_text" in result) {
-        inputs = [message.content];
-        responses = [result["generated_text"]];
-        console.log(inputs);
-        console.log(responses);
-        dataset[message.author.id] = {
-          "inputs": inputs,
-          "responses": responses,
-        };
-        lastResponse = result["generated_text"];
+      cleverbot(message.content, context).then((response) => {
+        context.push(message.content);
+        context.push(response);
+        dataset[message.author.id] = { "context": context };
         fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
-        message.reply(result["generated_text"]);
-      }
+        message.reply(response);
+      });
     }
     messageCount = messageCount - 1;
   }, timeOut);
@@ -458,7 +445,7 @@ client.on("guildCreate", async (guild) => {
       "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png"
     )
     .setFooter({
-      text: "I'm a human but that doesn't mean I can't moo.",
+      text: "Hi, I'm Daisy!",
       iconURL:
         "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
     });
@@ -471,38 +458,24 @@ client.on("speech", async (msg) => {
   if (!String(msg.content).toLowerCase().includes("daisy")) {
     return;
   }
-  let inputs = [];
-  let responses = [];
+  let context = [];
   if (msg.author.id in dataset) {
     let userStored = dataset[msg.author.id];
-    inputs = userStored["inputs"];
-    responses = userStored["responses"];
+    context = userStored["context"];
   }
-  let result = await query({
-    "inputs": {
-      "past_user_inputs": inputs,
-      "generated_responses": responses,
-      "text": msg.content,
-    },
-  });
-  if ("generated_text" in result) {
-    inputs.push(msg.content);
-    responses.push(result["generated_text"]);
-    console.log(inputs);
-    console.log(responses);
-    dataset[msg.author.id] = {
-      "inputs": inputs,
-      "responses": responses,
-    };
+  cleverbot(msg.content, context).then((response) => {
+    context.push(msg.content);
+    context.push(response);
+    dataset[msg.author.id] = { "context": context };
     fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
-    const stream = discordTTS.getVoiceStream(result["generated_text"]);
+    const stream = discordTTS.getVoiceStream(response);
     const audioResource = createAudioResource(stream, {
       inputType: StreamType.Arbitrary,
       inlineVolume: true,
     });
     connection.subscribe(audioPlayer);
     audioPlayer.play(audioResource);
-  }
+  });
 });
 
 client.login(process.env.TOKEN);

@@ -54,13 +54,17 @@ const commands = [
     name: "leave-voice",
     description: "End a voice conversation.",
   },
+  {
+    name: "toggle-moderation",
+    description: "Toggles moderation features.",
+  },
 ];
 
 var dataset = {};
+var config = {};
 var messageCount = 0;
 var cow = false;
 var connection;
-var lastResponse = "";
 
 var audioPlayer = new AudioPlayer();
 
@@ -71,6 +75,13 @@ if (fs.existsSync("dataset.json")) {
   dataset = JSON.parse(rawJSON);
 } else {
   fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
+}
+
+if (fs.existsSync("guilds.json")) {
+  let rawJSON = fs.readFileSync("guilds.json", "utf8");
+  config = JSON.parse(rawJSON);
+} else {
+  fs.writeFileSync("guilds.json", JSON.stringify(config, null, 2));
 }
 
 async function query(data) {
@@ -119,7 +130,15 @@ client.on("ready", () => {
 
 client.on("messageCreate", async (message) => {
   let isCommand = false;
+  let modEnabled = true;
   if (message.author.bot) return;
+  if (message.guild.id in config) {
+    modEnabled = config[message.guild.id]["modEnabled"];
+  } else {
+    config[message.guild.id] = { "modEnabled": modEnabled };
+    fs.writeFileSync("guilds.json", JSON.stringify(config, null, 2));
+  }
+
   messageCount = messageCount + 1;
   timeOut = 2000;
 
@@ -142,6 +161,7 @@ client.on("messageCreate", async (message) => {
           let isMessageToxic = await isToxic(textOCR);
           console.log(isMessageToxic);
           if (isMessageToxic == "True") {
+            if (!modEnabled) return;
             if (
               String(textOCR).includes("commit suicide") ||
               String(textOCR).includes("kill myself")
@@ -218,6 +238,7 @@ client.on("messageCreate", async (message) => {
       }
     }
     if (messageToxic == "True") {
+      if (!modEnabled) return;
       if (
         String(message.content).includes("commit suicide") ||
         String(message.content).includes("kill myself")
@@ -315,13 +336,18 @@ client.on("messageCreate", async (message) => {
         let userStored = dataset[message.author.id];
         context = userStored["context"];
       }
-      cleverbot(message.content, context).then((response) => {
-        context.push(message.content);
-        context.push(response);
-        dataset[message.author.id] = { "context": context };
-        fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
-        message.reply(response);
-      });
+      try {
+        cleverbot(message.content, context).then((response) => {
+          context.push(message.content);
+          context.push(response);
+          dataset[message.author.id] = { "context": context };
+          fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
+          message.reply(response);
+        });
+      } catch (e) {
+        console.log(e);
+        message.reply("Daisy did not respond. \n ```" + e + "```");
+      }
     }
     messageCount = messageCount - 1;
   }, timeOut);
@@ -410,6 +436,25 @@ client.on("interactionCreate", async (interaction) => {
     }
     connection.destroy();
     interaction.reply("Bye! Left your voice channel.");
+  }
+
+  if (interaction.commandName == "toggle-moderation") {
+    if (interaction.guild.id in config) {
+      let val = config[interaction.guild.id]["modEnabled"];
+      if (val == true) {
+        val = false;
+      } else {
+        val = true;
+      }
+      config[interaction.guild.id]["modEnabled"] = val;
+      fs.writeFileSync("guilds.json", JSON.stringify(config, null, 2));
+      interaction.reply("Moderation set to: ``" + val + "``");
+    } else {
+      val = false;
+      config[interaction.guild.id] = { "modEnabled": val };
+      fs.writeFileSync("guilds.json", JSON.stringify(config, null, 2));
+      interaction.reply("Moderation set to: ``" + val + "``");
+    }
   }
 });
 

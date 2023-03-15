@@ -101,13 +101,14 @@ async function query(data) {
 
 async function isToxic(comment) {
   if (comment.trim() == "") {
-    return "False";
+    return { "flagged": false };
   }
   console.log("Checking if message is toxic: " + comment);
   return await fetch(
-    "https://NodeToxicityChecker.skywarspro15.repl.co/toxic?comment=" +
-      encodeURI(comment.trim())
-  ).then((result) => result.text());
+    "https://gendereq-model.tranch-research.repl.co/toxic?comment=" +
+      encodeURI(comment.trim()) +
+      "&hasReasoning=true"
+  ).then((result) => result.json());
 }
 
 (async () => {
@@ -146,7 +147,7 @@ client.on("messageCreate", async (message) => {
     var messageToxic = await isToxic(message.content);
     var embed;
     console.log(messageToxic);
-    if (messageToxic == "False") {
+    if (messageToxic["flagged"] == false) {
       if (message.attachments.size > 0) {
         message.attachments.forEach(async (attachment) => {
           var ImageURL = attachment.proxyURL;
@@ -160,7 +161,7 @@ client.on("messageCreate", async (message) => {
           console.log(textOCR);
           let isMessageToxic = await isToxic(textOCR);
           console.log(isMessageToxic);
-          if (isMessageToxic == "True") {
+          if (isMessageToxic["flagged"] == true) {
             if (!modEnabled) return;
             if (
               String(textOCR).includes("commit suicide") ||
@@ -192,7 +193,7 @@ client.on("messageCreate", async (message) => {
                 .setAuthor({
                   name: "Daisy",
                 })
-                .setDescription("Could you NOT say that again?")
+                .setDescription(isMessageToxic["reason"])
                 .setThumbnail(
                   "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/daisy%20angery.png"
                 )
@@ -237,7 +238,7 @@ client.on("messageCreate", async (message) => {
         });
       }
     }
-    if (messageToxic == "True") {
+    if (messageToxic["flagged"] == true) {
       if (!modEnabled) return;
       if (
         String(message.content).includes("commit suicide") ||
@@ -269,7 +270,7 @@ client.on("messageCreate", async (message) => {
           .setAuthor({
             name: "Daisy",
           })
-          .setDescription("Could you NOT say that again?")
+          .setDescription(messageToxic["reason"])
           .setThumbnail(
             "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/daisy%20angery.png"
           )
@@ -381,13 +382,12 @@ client.on("interactionCreate", async (interaction) => {
           "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png"
         )
         .setFooter({
-          text: "I'm a human but that doesn't mean I can't moo.",
+          text: "I'm a human again!",
           iconURL:
             "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
         });
     } else {
       cow = true;
-      cow = false;
       embed = new EmbedBuilder()
         .setColor("#f5e353")
         .setTitle("Moo")
@@ -439,6 +439,24 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   if (interaction.commandName == "toggle-moderation") {
+    if (!interaction.member.permissions.has("ADMINISTRATOR")) {
+      let curEmbed = new EmbedBuilder()
+        .setColor("#f5e353")
+        .setTitle("You must be an administrator to use this command!")
+        .setAuthor({
+          name: "Daisy",
+        })
+        .setDescription("Moo")
+        .setThumbnail(
+          "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png"
+        )
+        .setFooter({
+          text: "Hi, I'm Daisy!",
+          iconURL:
+            "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
+        });
+      await interaction.reply({ embeds: [curEmbed] });
+    }
     if (interaction.guild.id in config) {
       let val = config[interaction.guild.id]["modEnabled"];
       if (val == true) {
@@ -500,27 +518,39 @@ client.on("guildCreate", async (guild) => {
 client.on("speech", async (msg) => {
   if (!msg.content) return;
   console.log(msg.content);
-  if (!String(msg.content).toLowerCase().includes("daisy")) {
-    return;
-  }
+  // if (!String(msg.content).toLowerCase().includes("daisy")) {
+  //   return;
+  // }
   let context = [];
   if (msg.author.id in dataset) {
     let userStored = dataset[msg.author.id];
     context = userStored["context"];
   }
-  cleverbot(msg.content, context).then((response) => {
-    context.push(msg.content);
-    context.push(response);
-    dataset[msg.author.id] = { "context": context };
-    fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
-    const stream = discordTTS.getVoiceStream(response);
-    const audioResource = createAudioResource(stream, {
-      inputType: StreamType.Arbitrary,
-      inlineVolume: true,
+  cleverbot(msg.content, context)
+    .then((response) => {
+      context.push(msg.content);
+      context.push(response);
+      dataset[msg.author.id] = { "context": context };
+      fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
+      const stream = discordTTS.getVoiceStream(response);
+      const audioResource = createAudioResource(stream, {
+        inputType: StreamType.Arbitrary,
+        inlineVolume: true,
+      });
+      connection.subscribe(audioPlayer);
+      audioPlayer.play(audioResource);
+    })
+    .catch((e) => {
+      const stream = discordTTS.getVoiceStream(
+        "omg my brain died please try again"
+      );
+      const audioResource = createAudioResource(stream, {
+        inputType: StreamType.Arbitrary,
+        inlineVolume: true,
+      });
+      connection.subscribe(audioPlayer);
+      audioPlayer.play(audioResource);
     });
-    connection.subscribe(audioPlayer);
-    audioPlayer.play(audioResource);
-  });
 });
 
 client.login(process.env.TOKEN);

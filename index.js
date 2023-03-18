@@ -9,6 +9,7 @@ const {
   Client,
   GatewayIntentBits,
   EmbedBuilder,
+  PermissionsBitField,
 } = require("discord.js");
 const {
   joinVoiceChannel,
@@ -100,15 +101,19 @@ async function query(data) {
 }
 
 async function isToxic(comment) {
-  if (comment.trim() == "") {
+  try {
+    if (comment.trim() == "") {
+      return { "flagged": false };
+    }
+    console.log("Checking if message is toxic: " + comment);
+    return await fetch(
+      "https://gendereq-model.tranch-research.repl.co/toxic?comment=" +
+        encodeURI(comment.trim()) +
+        "&hasReasoning=true"
+    ).then((result) => result.json());
+  } catch {
     return { "flagged": false };
   }
-  console.log("Checking if message is toxic: " + comment);
-  return await fetch(
-    "https://gendereq-model.tranch-research.repl.co/toxic?comment=" +
-      encodeURI(comment.trim()) +
-      "&hasReasoning=true"
-  ).then((result) => result.json());
 }
 
 (async () => {
@@ -146,6 +151,18 @@ client.on("messageCreate", async (message) => {
   setTimeout(async function () {
     var messageToxic = await isToxic(message.content);
     var embed;
+    var offenses = 0;
+
+    if (message.author.id in dataset) {
+      if ("offenses" in dataset[message.author.id]) {
+        offenses = dataset[message.author.id]["offenses"];
+      } else {
+        dataset[message.author.id]["offenses"] = 0;
+      }
+    } else {
+      dataset[message.author.id] = { "offenses": 0 };
+    }
+
     console.log(messageToxic);
     if (messageToxic["flagged"] == false) {
       if (message.attachments.size > 0) {
@@ -182,7 +199,7 @@ client.on("messageCreate", async (message) => {
                 .addFields({ name: "You said (in image):", value: textOCR })
                 .setTimestamp()
                 .setFooter({
-                  text: "I'm trying my best to keep this server as clean as possible!",
+                  text: "Offenses: " + (offenses + 1) + "/4",
                   iconURL:
                     "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
                 });
@@ -200,7 +217,7 @@ client.on("messageCreate", async (message) => {
                 .addFields({ name: "You said (in image):", value: textOCR })
                 .setTimestamp()
                 .setFooter({
-                  text: "I'm trying my best to keep this server as clean as possible!",
+                  text: "Offenses: " + (offenses + 1) + "/4",
                   iconURL:
                     "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
                 });
@@ -223,7 +240,7 @@ client.on("messageCreate", async (message) => {
                 .addFields({ name: "You said (in image):", value: textOCR })
                 .setTimestamp()
                 .setFooter({
-                  text: "I'm trying my best to keep this server as clean as possible!",
+                  text: "Offenses: " + (offenses + 1) + "/4",
                   iconURL:
                     "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
                 });
@@ -234,6 +251,16 @@ client.on("messageCreate", async (message) => {
               embeds: [embed],
             });
             message.delete();
+            offenses = offenses + 1;
+            if (offenses >= 4) {
+              offenses = 0;
+              console.log("Reached fourth offense");
+              if (message.member.kickable) {
+                message.member.kick();
+              }
+            }
+            dataset[message.author.id]["offenses"] = offenses;
+            fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
           }
         });
       }
@@ -259,7 +286,7 @@ client.on("messageCreate", async (message) => {
           .addFields({ name: "You said:", value: message.content })
           .setTimestamp()
           .setFooter({
-            text: "I'm trying my best to keep this server as clean as possible!",
+            text: "Offenses: " + (offenses + 1) + "/4",
             iconURL:
               "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
           });
@@ -277,7 +304,7 @@ client.on("messageCreate", async (message) => {
           .addFields({ name: "You said:", value: message.content })
           .setTimestamp()
           .setFooter({
-            text: "I'm trying my best to keep this server as clean as possible!",
+            text: "Offenses: " + (offenses + 1) + "/4",
             iconURL:
               "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
           });
@@ -300,7 +327,7 @@ client.on("messageCreate", async (message) => {
           .addFields({ name: "You said:", value: message.content })
           .setTimestamp()
           .setFooter({
-            text: "I'm trying my best to keep this server as clean as possible!",
+            text: "Offenses: " + (offenses + 1) + "/4",
             iconURL:
               "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
           });
@@ -311,6 +338,16 @@ client.on("messageCreate", async (message) => {
         embeds: [embed],
       });
       message.delete();
+      offenses = offenses + 1;
+      if (offenses >= 4) {
+        offenses = 0;
+        console.log("Reached fourth offense");
+        if (message.member.kickable) {
+          message.member.kick();
+        }
+      }
+      dataset[message.author.id]["offenses"] = offenses;
+      fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
     } else {
       if (isCommand) return;
       if (
@@ -335,7 +372,9 @@ client.on("messageCreate", async (message) => {
 
       if (message.author.id in dataset) {
         let userStored = dataset[message.author.id];
-        context = userStored["context"];
+        if ("context" in userStored) {
+          context = userStored["context"];
+        }
       }
       try {
         cleverbot(message.content, context).then((response) => {
@@ -408,7 +447,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   if (interaction.commandName == "forget") {
-    delete dataset[interaction.member.user.id];
+    delete dataset[interaction.member.user.id]["context"];
     fs.writeFileSync("dataset.json", JSON.stringify(dataset, null, 2));
     await interaction.reply("Successfully deleted our conversation.");
   }
@@ -439,14 +478,18 @@ client.on("interactionCreate", async (interaction) => {
   }
 
   if (interaction.commandName == "toggle-moderation") {
-    if (!interaction.member.permissions.has("ADMINISTRATOR")) {
+    if (
+      !interaction.member.permissions.has(
+        PermissionsBitField.Flags.Administrator
+      )
+    ) {
       let curEmbed = new EmbedBuilder()
         .setColor("#f5e353")
-        .setTitle("You must be an administrator to use this command!")
+        .setTitle("You're not an admin!")
         .setAuthor({
           name: "Daisy",
         })
-        .setDescription("Moo")
+        .setDescription("You're must be an administrator to use this command!")
         .setThumbnail(
           "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png"
         )
@@ -456,6 +499,7 @@ client.on("interactionCreate", async (interaction) => {
             "https://DarkorangeUnripeHexadecimal.skywarspro15.repl.co/pfp.png",
         });
       await interaction.reply({ embeds: [curEmbed] });
+      return;
     }
     if (interaction.guild.id in config) {
       let val = config[interaction.guild.id]["modEnabled"];
@@ -518,9 +562,9 @@ client.on("guildCreate", async (guild) => {
 client.on("speech", async (msg) => {
   if (!msg.content) return;
   console.log(msg.content);
-  // if (!String(msg.content).toLowerCase().includes("daisy")) {
-  //   return;
-  // }
+  if (!String(msg.content).toLowerCase().includes("daisy")) {
+    return;
+  }
   let context = [];
   if (msg.author.id in dataset) {
     let userStored = dataset[msg.author.id];

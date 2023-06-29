@@ -22,7 +22,7 @@
     "cleverbot-free": "^1.1.12",
     "discord-speech-recognition": "^3.1.1",
     "discord-tts": "^1.2.2",
-    "discord.js": "^14.7.1",
+    "discord.js": "^14.11.0",
     "dotenv": "^16.0.3",
     "erlpack": "github:discord/erlpack",
     "ffmpeg": "^0.0.4",

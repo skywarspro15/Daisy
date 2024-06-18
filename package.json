@@ -22,7 +22,7 @@
     "cleverbot-free": "^1.1.12",
     "discord-speech-recognition": "^3.4.1",
     "discord-tts": "^1.2.2",
-    "discord.js": "^14.7.1",
+    "discord.js": "^14.8.0",
     "dotenv": "^16.1.4",
     "erlpack": "github:discord/erlpack",
     "ffmpeg": "^0.0.4",
@@ -33,7 +33,7 @@
     "string-similarity": "^4.0.4",
     "tesseract.js": "^4.0.2",
     "utf-8-validate": "^5.0.10",
-    "ws": "^8.12.0",
+    "ws": "^8.17.1",
     "zlib-sync": "^0.1.7"
   }
 }
